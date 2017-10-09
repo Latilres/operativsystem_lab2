@@ -177,13 +177,39 @@ void getSlot(task_t task)
 /* task processes data on the bus send/receive */
 void transferData(task_t task) 
 {
-    msg("NOT IMPLEMENTED");
-    /* FIXME implement */
+    // 0.1 to 5s sleep time
+    unsigned long sleep_time = random_ulong() % 4900 + 100;
+    printf("Task with priority: %d and direction %d sleeps for %d\n", task.priority, task.direction, 
+          (unsigned int) sleep_time);
+    timer_msleep(sleep_time);
+    printf("Task with priority: %d and direction %d slept for %d\n", task.priority, task.direction, 
+          (unsigned int) sleep_time);
 }
 
 /* task releases the slot */
 void leaveSlot(task_t task) 
 {
-    msg("NOT IMPLEMENTED");
-    /* FIXME implement */
+    lock_acquire(&bus_data);
+    
+    bus_users--;
+    
+    int opposite_dir = 1 - task.direction;
+    
+    if (bus_waiting_high[task.direction] > 0) {
+        bus_waiting_high[task.direction]--;
+        sema_up(waiting_high[task.direction]);
+    } else if (bus_waiting_high[opposite_dir] > 0 && bus_users == 0) {
+        bus_waiting_high[opposite_dir]--;
+        bus_direction = opposite_dir;
+        sema_up(waiting_high[opposite_dir]);
+    } else if (bus_waiting_low[task.direction] > 0 && bus_waiting_high[opposite_dir] == 0) {
+        bus_waiting_low[task.direction]--;
+        sema_up(waiting_low[task.direction]);    
+    } else if (bus_waiting_low[opposite_dir] > 0 && bus_users == 0) {
+        bus_waiting_low[opposite_dir]--;
+        bus_direction = opposite_dir;
+        sema_up(waiting_low[opposite_dir]);    
+    }
+    
+    lock_release(&bus_data);
 }
