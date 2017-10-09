@@ -85,8 +85,30 @@ void init_bus(void){
 void batchScheduler(unsigned int num_tasks_send, unsigned int num_task_receive,
         unsigned int num_priority_send, unsigned int num_priority_receive)
 {
-    msg("NOT IMPLEMENTED");
-    /* FIXME implement */
+    int i;
+    for (i = 0; i < num_tasks_send; i++) {
+        char name[50];
+        sprintf(name, "lowsendtask%d", i);
+        thread_create(name, PRI_DEFAULT, senderTask, NULL);
+    }
+    
+    for (i = 0; i < num_task_receive; i++) {
+        char name[50];
+        sprintf(name, "lowrecvtask%d", i);
+        thread_create(name, PRI_DEFAULT, senderTask, NULL);
+    }
+    
+    for (i = 0; i < num_priority_send; i++) {
+        char name[50];
+        sprintf(name, "highsendtask%d", i);
+        thread_create(name, PRI_MAX, senderTask, NULL);
+    }
+    
+    for (i = 0; i < num_priority_receive; i++) {
+        char name[50];
+        sprintf(name, "highrecvtask%d", i);
+        thread_create(name, PRI_MAX, senderTask, NULL);
+    }
 }
 
 /* Normal task,  sending data to the accelerator */
