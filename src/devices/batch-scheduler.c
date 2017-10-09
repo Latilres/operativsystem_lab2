@@ -24,6 +24,9 @@ typedef struct {
 	int priority;
 } task_t;
 
+
+// Things we added
+// ~~~~~~~~~~~~~~~~~~~~~~
 struct lock low_lock;
 struct lock high_lock;
 struct semaphore waiting_high[2];
@@ -33,6 +36,8 @@ int bus_users;
 int bus_direction;
 int bus_waiting_low[2];
 int bus_waiting_high[2];
+// ~~~~~~~~~~~~~~~~~~~~~~
+
 
 void batchScheduler(unsigned int num_tasks_send, unsigned int num_task_receive,
         unsigned int num_priority_send, unsigned int num_priority_receive);
@@ -57,18 +62,22 @@ void init_bus(void){
     
     lock_init(&low_lock);
     lock_init(&high_lock);
+    lock_init(&bus_lock);
+    // Initialized to be locked, because NONE SHALL PASS (in getSlot) until signaled otherwise
     sema_init(&waiting_high[0], 0);
     sema_init(&waiting_high[1], 0);
     sema_init(&waiting_low[0],  0);
     sema_init(&waiting_low[1],  0);
-    lock_init(&bus_lock);
-    
+
+    // Number of waiting threads    
     bus_waiting_low[SENDER]     = 0;
     bus_waiting_low[RECEIVER]   = 0;
     bus_waiting_high[SENDER]    = 0;
     bus_waiting_high[RECEIVER]  = 0;
     
+    // Number of used slots
     bus_users = 0;
+    
     bus_direction = SENDER;
 }
 
@@ -87,24 +96,25 @@ void batchScheduler(unsigned int num_tasks_send, unsigned int num_task_receive,
         unsigned int num_priority_send, unsigned int num_priority_receive)
 {
     unsigned int i;
+    // Start normal priority send tasks
     for (i = 0; i < num_tasks_send; i++) {
         char name[50];
         snprintf(name, 50, "lowsendtask%d", i);
         thread_create(name, PRI_DEFAULT, senderTask, NULL);
     }
-    
+    // Start normal priority receive tasks
     for (i = 0; i < num_task_receive; i++) {
         char name[50];
         snprintf(name, 50, "lowrecvtask%d", i);
         thread_create(name, PRI_DEFAULT, receiverTask, NULL);
     }
-    
+    // Start high priority send tasks
     for (i = 0; i < num_priority_send; i++) {
         char name[50];
         snprintf(name, 50, "highsendtask%d", i);
         thread_create(name, PRI_MAX, senderPriorityTask, NULL);
     }
-    
+    // Start high priority receive tasks
     for (i = 0; i < num_priority_receive; i++) {
         char name[50];
         snprintf(name, 50, "highrecvtask%d", i);
@@ -139,39 +149,41 @@ void receiverPriorityTask(void *aux UNUSED){
 
 /* abstract task execution*/
 void oneTask(task_t task) {
-  //printf("Thread: %s tries to acquire slot\n", thread_name());
   getSlot(task);
-  //printf("Thread: %s acquired slot\n", thread_name());
   transferData(task);
   leaveSlot(task);
-  //printf("Thread: %s released slot\n", thread_name());
 }
 
 
 /* task tries to get slot on the bus subsystem */
 void getSlot(task_t task) 
 {
-    // Step 1: Block if needed
+    // Block if needed
     if (task.priority == NORMAL) {
         // Only one low priority task may acquire a slot at one time
         lock_acquire(&low_lock);
         
-        // 
+        // Only one task may read/write bus variables at one time
         lock_acquire(&bus_lock);
         
+        // Conditions for desiding whether or not a slot on the bus may be acquired
         int has_capacity = bus_users < BUS_CAPACITY;
         int right_direction = bus_direction == task.direction;
         int can_change_direction = bus_users == 0;
         int no_high_waiting = (bus_waiting_high[SENDER] + bus_waiting_high[RECEIVER]) == 0;
         int ready = no_high_waiting && has_capacity && (right_direction || can_change_direction);
         
+        // A slot may be acquired
         if (ready) {
             bus_users++;
             bus_direction = task.direction;
             lock_release(&bus_lock);
+        // A slot may not be acquired
         } else {
             bus_waiting_low[task.direction]++;
-            lock_release(&bus_lock); // Bus data needs to be free while we block to avoid deadlock
+            // Bus data needs to be free while we block to avoid deadlock
+            lock_release(&bus_lock); 
+            // sema_up is called from leaveSlot() when this thread may obtain a slot
             sema_down(&waiting_low[task.direction]);
         }
         
@@ -180,20 +192,26 @@ void getSlot(task_t task)
         // Only one high priority task may acqurie a slot at one time
         lock_acquire(&high_lock);
         
+        // Only one task may read/write bus variables at one time
         lock_acquire(&bus_lock);
         
+        // Conditions for desiding whether or not a slot on the bus may be acquired       
         int has_capacity = bus_users < BUS_CAPACITY;
         int right_direction = bus_direction == task.direction;
         int can_change_direction = bus_users == 0;
         int ready = has_capacity && (right_direction || can_change_direction);
         
+        // A slot may be acquired
         if (ready) {
             bus_users++;
             bus_direction = task.direction;
             lock_release(&bus_lock);
+        // A slot may not be acquired
         } else {
             bus_waiting_high[task.direction]++;
-            lock_release(&bus_lock); // Bus data needs to be free while we block to avoid deadlock
+            // Bus data needs to be free while we block to avoid deadlock
+            lock_release(&bus_lock); 
+            // sema_up is called from leaveSlot() when this thread may obtain a slot
             sema_down(&waiting_high[task.direction]);
         }
         
@@ -204,37 +222,36 @@ void getSlot(task_t task)
 /* task processes data on the bus send/receive */
 void transferData(task_t task) 
 {
-    // 0.1 to 5s sleep time
+    // 100 to 300ms sleep time
     unsigned long sleep_time = random_ulong() % 200 + 100;
-    //printf("Task starts at %ld with priority: %d and direction %d sleeps for %d\n", (long int) timer_ticks(), task.priority, task.direction, 
-    //      (unsigned int) sleep_time);
     timer_msleep(sleep_time);
-    //printf("Task starts at %ld with priority: %d and direction %d slept for %d\n", (long int) timer_ticks(), task.priority, task.direction, 
-    //      (unsigned int) sleep_time);
 }
 
 /* task releases the slot */
 void leaveSlot(task_t task) 
 {
     lock_acquire(&bus_lock);
-    
     bus_users--;
-    
     int opposite_dir = 1 - task.direction;
     
+    // A high prio task in the current direction exists
     if (bus_waiting_high[task.direction] > 0) {
         bus_waiting_high[task.direction]--;
         sema_up(&waiting_high[task.direction]);
         bus_users++;
+    // A high prio task in the opposite direction exists and direction may be changed
     } else if (bus_waiting_high[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_high[opposite_dir]--;
         bus_direction = opposite_dir;
         sema_up(&waiting_high[opposite_dir]);
         bus_users++;
+    // A low prio task in the current direction exists, but no prio tasks exist in either direction
     } else if (bus_waiting_low[task.direction] > 0 && bus_waiting_high[opposite_dir] == 0) {
         bus_waiting_low[task.direction]--;
         sema_up(&waiting_low[task.direction]);
         bus_users++;    
+    // A low prio task in the opposite direction exists, direction may be changed
+    // and no prio tasks exist in either direction
     } else if (bus_waiting_low[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_low[opposite_dir]--;
         bus_direction = opposite_dir;
