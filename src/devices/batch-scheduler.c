@@ -44,9 +44,9 @@ void receiverPriorityTask(void *);
 void init_bus(void);
 
 void oneTask(task_t task);/*Task requires to use the bus and executes methods below*/
-	void getSlot(task_t task); /* task tries to use slot on the bus */
-	void transferData(task_t task); /* task processes data on the bus either sending or receiving based on the direction*/
-	void leaveSlot(task_t task); /* task release the slot */
+void getSlot(task_t task); /* task tries to use slot on the bus */
+void transferData(task_t task); /* task processes data on the bus either sending or receiving based on the direction*/
+void leaveSlot(task_t task); /* task release the slot */
 
 
 
@@ -110,6 +110,7 @@ void batchScheduler(unsigned int num_tasks_send, unsigned int num_task_receive,
         snprintf(name, 50, "highrecvtask%d", i);
         thread_create(name, PRI_MAX, receiverPriorityTask, NULL);
     }
+    
 }
 
 /* Normal task,  sending data to the accelerator */
@@ -224,17 +225,21 @@ void leaveSlot(task_t task)
     if (bus_waiting_high[task.direction] > 0) {
         bus_waiting_high[task.direction]--;
         sema_up(&waiting_high[task.direction]);
+        bus_users++;
     } else if (bus_waiting_high[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_high[opposite_dir]--;
         bus_direction = opposite_dir;
         sema_up(&waiting_high[opposite_dir]);
+        bus_users++;
     } else if (bus_waiting_low[task.direction] > 0 && bus_waiting_high[opposite_dir] == 0) {
         bus_waiting_low[task.direction]--;
-        sema_up(&waiting_low[task.direction]);    
+        sema_up(&waiting_low[task.direction]);
+        bus_users++;    
     } else if (bus_waiting_low[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_low[opposite_dir]--;
         bus_direction = opposite_dir;
-        sema_up(&waiting_low[opposite_dir]);    
+        sema_up(&waiting_low[opposite_dir]);
+        bus_users++;   
     }
     
     lock_release(&bus_lock);
