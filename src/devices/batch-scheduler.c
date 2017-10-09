@@ -7,6 +7,7 @@
 #include "threads/synch.h"
 #include "threads/thread.h"
 #include "lib/random.h" //generate random numbers
+#include "devices/timer.h"
 
 #define BUS_CAPACITY 3
 #define SENDER 0
@@ -40,7 +41,7 @@ void senderTask(void *);
 void receiverTask(void *);
 void senderPriorityTask(void *);
 void receiverPriorityTask(void *);
-
+void init_bus(void);
 
 void oneTask(task_t task);/*Task requires to use the bus and executes methods below*/
 	void getSlot(task_t task); /* task tries to use slot on the bus */
@@ -56,10 +57,10 @@ void init_bus(void){
     
     lock_init(&low_lock);
     lock_init(&high_lock);
-    sema_init(waiting_high[0], 0);
-    sema_init(waiting_high[1], 0);
-    sema_init(waiting_low[0],  0);
-    sema_init(waiting_low[1],  0);
+    sema_init(&waiting_high[0], 0);
+    sema_init(&waiting_high[1], 0);
+    sema_init(&waiting_low[0],  0);
+    sema_init(&waiting_low[1],  0);
     lock_init(&bus_lock);
     
     bus_waiting_low[SENDER]     = 0;
@@ -68,7 +69,7 @@ void init_bus(void){
     bus_waiting_high[RECEIVER]  = 0;
     
     bus_users = 0;
-    bus_direction = BUS_SENDER;
+    bus_direction = SENDER;
 }
 
 /*
@@ -85,29 +86,29 @@ void init_bus(void){
 void batchScheduler(unsigned int num_tasks_send, unsigned int num_task_receive,
         unsigned int num_priority_send, unsigned int num_priority_receive)
 {
-    int i;
+    unsigned int i;
     for (i = 0; i < num_tasks_send; i++) {
         char name[50];
-        sprintf(name, "lowsendtask%d", i);
+        snprintf(name, 50, "lowsendtask%d", i);
         thread_create(name, PRI_DEFAULT, senderTask, NULL);
     }
     
     for (i = 0; i < num_task_receive; i++) {
         char name[50];
-        sprintf(name, "lowrecvtask%d", i);
-        thread_create(name, PRI_DEFAULT, senderTask, NULL);
+        snprintf(name, 50, "lowrecvtask%d", i);
+        thread_create(name, PRI_DEFAULT, receiverTask, NULL);
     }
     
     for (i = 0; i < num_priority_send; i++) {
         char name[50];
-        sprintf(name, "highsendtask%d", i);
-        thread_create(name, PRI_MAX, senderTask, NULL);
+        snprintf(name, 50, "highsendtask%d", i);
+        thread_create(name, PRI_MAX, senderPriorityTask, NULL);
     }
     
     for (i = 0; i < num_priority_receive; i++) {
         char name[50];
-        sprintf(name, "highrecvtask%d", i);
-        thread_create(name, PRI_MAX, senderTask, NULL);
+        snprintf(name, 50, "highrecvtask%d", i);
+        thread_create(name, PRI_MAX, receiverPriorityTask, NULL);
     }
 }
 
@@ -137,9 +138,12 @@ void receiverPriorityTask(void *aux UNUSED){
 
 /* abstract task execution*/
 void oneTask(task_t task) {
+  //printf("Thread: %s tries to acquire slot\n", thread_name());
   getSlot(task);
+  //printf("Thread: %s acquired slot\n", thread_name());
   transferData(task);
   leaveSlot(task);
+  //printf("Thread: %s released slot\n", thread_name());
 }
 
 
@@ -167,7 +171,7 @@ void getSlot(task_t task)
         } else {
             bus_waiting_low[task.direction]++;
             lock_release(&bus_lock); // Bus data needs to be free while we block to avoid deadlock
-            sema_down(waiting_low[task.direction]);
+            sema_down(&waiting_low[task.direction]);
         }
         
         lock_release(&low_lock);
@@ -175,7 +179,7 @@ void getSlot(task_t task)
         // Only one high priority task may acqurie a slot at one time
         lock_acquire(&high_lock);
         
-        lock_acquire(&bus_locK);
+        lock_acquire(&bus_lock);
         
         int has_capacity = bus_users < BUS_CAPACITY;
         int right_direction = bus_direction == task.direction;
@@ -189,7 +193,7 @@ void getSlot(task_t task)
         } else {
             bus_waiting_high[task.direction]++;
             lock_release(&bus_lock); // Bus data needs to be free while we block to avoid deadlock
-            sema_down(waiting_high[task.direction]);
+            sema_down(&waiting_high[task.direction]);
         }
         
         lock_release(&high_lock);
@@ -200,18 +204,18 @@ void getSlot(task_t task)
 void transferData(task_t task) 
 {
     // 0.1 to 5s sleep time
-    unsigned long sleep_time = random_ulong() % 4900 + 100;
-    printf("Task with priority: %d and direction %d sleeps for %d\n", task.priority, task.direction, 
-          (unsigned int) sleep_time);
+    unsigned long sleep_time = random_ulong() % 200 + 100;
+    //printf("Task starts at %ld with priority: %d and direction %d sleeps for %d\n", (long int) timer_ticks(), task.priority, task.direction, 
+    //      (unsigned int) sleep_time);
     timer_msleep(sleep_time);
-    printf("Task with priority: %d and direction %d slept for %d\n", task.priority, task.direction, 
-          (unsigned int) sleep_time);
+    //printf("Task starts at %ld with priority: %d and direction %d slept for %d\n", (long int) timer_ticks(), task.priority, task.direction, 
+    //      (unsigned int) sleep_time);
 }
 
 /* task releases the slot */
 void leaveSlot(task_t task) 
 {
-    lock_acquire(&bus_data);
+    lock_acquire(&bus_lock);
     
     bus_users--;
     
@@ -219,19 +223,19 @@ void leaveSlot(task_t task)
     
     if (bus_waiting_high[task.direction] > 0) {
         bus_waiting_high[task.direction]--;
-        sema_up(waiting_high[task.direction]);
+        sema_up(&waiting_high[task.direction]);
     } else if (bus_waiting_high[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_high[opposite_dir]--;
         bus_direction = opposite_dir;
-        sema_up(waiting_high[opposite_dir]);
+        sema_up(&waiting_high[opposite_dir]);
     } else if (bus_waiting_low[task.direction] > 0 && bus_waiting_high[opposite_dir] == 0) {
         bus_waiting_low[task.direction]--;
-        sema_up(waiting_low[task.direction]);    
+        sema_up(&waiting_low[task.direction]);    
     } else if (bus_waiting_low[opposite_dir] > 0 && bus_users == 0) {
         bus_waiting_low[opposite_dir]--;
         bus_direction = opposite_dir;
-        sema_up(waiting_low[opposite_dir]);    
+        sema_up(&waiting_low[opposite_dir]);    
     }
     
-    lock_release(&bus_data);
+    lock_release(&bus_lock);
 }
