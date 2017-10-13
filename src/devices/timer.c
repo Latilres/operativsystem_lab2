@@ -90,14 +90,16 @@ void
 timer_sleep (int64_t ticks) 
 {
   if (ticks > 0) {
-  
+    //At this point we know the thread is going to sleep so we disable interrupts to ensure mutex
+    enum intr_level old_level = intr_disable();
+    
   	int64_t start = timer_ticks ();
-  	//ASSERT (intr_get_level () == INTR_ON);
-  	
   	struct thread * thread_p = thread_current();
   	thread_p->wake_time = start + ticks;
-  	intr_disable();
   	thread_block();
+  	
+  	//At this point we know that the thread has woken up so we restore interrupts to the previous level
+  	intr_set_level(old_level);
   }
 }
 

@@ -1,0 +1,155 @@
+			+--------------------+
+			|    EDA092/DIT400   |
+			| LAB ASSIGNMENT 2:  |
+			| 	THREADS      |
+			|   DESIGN DOCUMENT  |
+			+--------------------+
+				   
+---- GROUP B8 ----
+
+>> Fill in the group number, names and email addresses of your group members.
+
+Erik Källberg <kalerik@student.chalmers.se>
+Therese Tengdahl <therese@tengdahl.nu>
+
+---- PRELIMINARIES ----
+
+>> If you have any preliminary comments on your submission, notes for the
+>> TAs, please give them here.
+
+>> Please cite any offline or online sources you consulted while
+>> preparing your submission, other than the Pintos documentation, course
+>> text, lecture notes, and course staff.
+
+			     ALARM CLOCK
+			     ===========
+
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+We modified struct thread adding:
+  int64_t wake_time;
+'wake_time' represents the kernel tick a thread wants to be woken at
+
+---- ALGORITHMS ----
+
+>> A2: Briefly describe what happens in a call to timer_sleep(),
+>> including the effects of the timer interrupt handler.
+timer_sleep first makes sure that the amount of ticks to sleep are positive before continuing.
+Then it saves interrupt level and disables interrupts. Then the tick to wake up the calling thread is determined and
+stored in 'wake_time'. Then the thread is blocked. Finally when thread is woken interrupt level is restored and 
+function finishes.
+
+
+>> A3: What steps are taken to minimize the amount of time spent in
+>> the timer interrupt handler?
+We use multiple checks in timer_wake (function called by thread_foreach in interrupt handler) to minimize time spent
+on threads that should not be woken.
+
+---- SYNCHRONIZATION ----
+
+>> A4: How are race conditions avoided when multiple threads call
+>> timer_sleep() simultaneously?
+timer_sleep disables interrupts which ensures that threads are mutex.
+
+>> A5: How are race conditions avoided when a timer interrupt occurs
+>> during a call to timer_sleep()?
+We ensure that they can not preempt timer_sleep by turning off interrupts.
+
+---- RATIONALE ----
+
+>> A6: Why did you choose this design?  In what ways is it superior to
+>> another design you considered?
+This design seemed appropriate and solves the synchronization problems. Any other design did not come to mind as this
+one worked.
+
+			    BATCH SCHEDULING
+			    ================
+---- DATA STRUCTURES ----
+
+>> A1: Copy here the declaration of each new or changed `struct' or
+>> `struct' member, global or static variable, semaphore, `typedef', or
+>> enumeration.  Identify the purpose of each in 25 words or less.
+
+We added the following global variables:
+  A lock for low/normal priority tasks ensuring that only one may try to get a slot at one time.
+  struct lock low_lock;
+
+  A lock for high priority tasks ensuring that only one may try to get a slot at one time.
+  struct lock high_lock;
+  
+  Semaphores used as blocking queues for each direction and priority
+  struct semaphore waiting_high[2];
+  struct semaphore waiting_low[2];
+  
+  A lock for ensuring read and write mutal exclusion of bus meta data shared between priorities.
+  struct lock bus_lock;
+  
+  The amount of slots in use
+  int bus_users;
+  The current direction of the bus
+  int bus_direction;
+  The amount of low priority tasks in queue
+  int bus_waiting_low[2];
+  The amount of high priority task in queue
+  int bus_waiting_high[2];
+
+---- SYNCHRONIZATION ----
+
+>> C1: How does your solution guarantee that no more that 3 tasks
+>> are using the bus in the same direction?
+By having a shared variable 'bus_users' keeping count of how many slots are in use and only allowing one thread 
+exclusive access to this variable at one time.
+
+
+>> C2: What prevents tasks from opposite directions from using the
+>> bus simultaneously?
+By keeping track of the current direction in 'bus_direction' and only allowing it to be changed if all slots are free.
+
+>> C3: How does your solution grant priority to high priority tasks over
+>> the waiting tasks in the same direction?
+By keeping two queues and checking the high priority queue first. 
+
+>> C4: How do you guarantee that despite having priority, high priority
+>> tasks do not start using the bus while there are still still using
+>> it in the oposite direction?
+With the variable 'bus_direction' and not allowing any task to switch direction if the bus is in use.
+
+>> C5: Did you have fun?
+Yes  ;)
+
+---- RATIONALE ----
+
+>> C6: Why did you choose this design? Did you consider other design 
+>> alternatives? In what ways is it superior to another design you considered?
+We tried with different amounts of semaphores at first, but then we found the use of locks more powerful 
+(and it also used less variables). We only used semaphores as blocking queues. Thus we didn't consider any
+other designs, only modifications of the one we turned in.
+
+
+			   SURVEY QUESTIONS (optional)
+			   ===========================
+
+Answering these questions is optional, but it will help us improve the
+course in future quarters.  Feel free to tell us anything you
+want--these questions are just to spur your thoughts.  You may also
+choose to respond anonymously in the course evaluations at the end of
+the quarter.
+
+>> In your opinion, was this assignment, or any one of the three problems
+>> in it, too easy or too hard?  Did it take too long or too little time?
+
+>> Did you find that working on a particular part of the assignment gave
+>> you greater insight into some aspect of OS design?
+
+>> Is there some particular fact or hint we should give students in
+>> future quarters to help them solve the problems?  Conversely, did you
+>> find any of our guidance to be misleading?
+
+>> Do you have any suggestions for the TAs to more effectively assist
+>> students, either for future quarters?
+
+>> Any other comments?
