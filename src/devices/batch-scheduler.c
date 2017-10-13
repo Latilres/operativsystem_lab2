@@ -168,10 +168,10 @@ void getSlot(task_t task)
         
         // Conditions for desiding whether or not a slot on the bus may be acquired
         int has_capacity = bus_users < BUS_CAPACITY;
-        int right_direction = bus_direction == task.direction;
+        int correct_direction = bus_direction == task.direction;
         int can_change_direction = bus_users == 0;
         int no_high_waiting = (bus_waiting_high[SENDER] + bus_waiting_high[RECEIVER]) == 0;
-        int ready = no_high_waiting && has_capacity && (right_direction || can_change_direction);
+        int ready = no_high_waiting && has_capacity && (correct_direction || can_change_direction);
         
         // A slot may be acquired
         if (ready) {
@@ -197,9 +197,9 @@ void getSlot(task_t task)
         
         // Conditions for desiding whether or not a slot on the bus may be acquired       
         int has_capacity = bus_users < BUS_CAPACITY;
-        int right_direction = bus_direction == task.direction;
+        int correct_direction = bus_direction == task.direction;
         int can_change_direction = bus_users == 0;
-        int ready = has_capacity && (right_direction || can_change_direction);
+        int ready = has_capacity && (correct_direction || can_change_direction);
         
         // A slot may be acquired
         if (ready) {
